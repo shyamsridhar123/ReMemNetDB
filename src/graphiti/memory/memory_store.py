@@ -826,3 +826,33 @@ class MemoryStore:
             memory_type='temporal',
             context={'valid_to': node.valid_to}
         )
+    
+    def get_existing_customer_ids(self) -> List[str]:
+        """Get all unique customer IDs from the database."""
+        logger.debug("Getting existing customer IDs from database")
+        
+        try:
+            if self.external_session:
+                return self._get_customer_ids_with_session(self.graph.db)
+            else:
+                with db_manager.get_session() as session:
+                    return self._get_customer_ids_with_session(session)
+        except Exception as e:
+            logger.error(f"❌ Failed to get customer IDs: {str(e)}")
+            return []
+    
+    def _get_customer_ids_with_session(self, session: Session) -> List[str]:
+        """Get customer IDs using a database session."""
+        try:
+            # Query all temporal nodes that have customer_id in properties
+            result = session.query(TemporalNode.properties['customer_id'].astext.distinct()).filter(
+                TemporalNode.properties['customer_id'].astext.isnot(None)
+            ).all()
+            
+            customer_ids = [row[0] for row in result if row[0]]
+            logger.info(f"📊 Found {len(customer_ids)} unique customer IDs")
+            return customer_ids
+            
+        except Exception as e:
+            logger.error(f"❌ Database query for customer IDs failed: {str(e)}")
+            return []

@@ -11,7 +11,9 @@ from pathlib import Path
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-      # ====================================================================    # Database Configuration
+    
+    # ====================================================================
+    # Database Configuration
     # ====================================================================
     database_url: str = Field(
         default="postgresql://postgres:postgres@localhost:54698/graphdb",
@@ -133,18 +135,10 @@ class Settings(BaseSettings):
     
     # ====================================================================
     # Development Settings
-    # ====================================================================
-    enable_auto_reload: bool = Field(default=True, description="Auto reload")
+    # ====================================================================    enable_auto_reload: bool = Field(default=True, description="Auto reload")
     enable_debug_toolbar: bool = Field(default=True, description="Debug toolbar")
     show_sql_queries: bool = Field(default=True, description="Show SQL")
     mock_llm_responses: bool = Field(default=False, description="Mock LLM")
-    
-    @validator('database_url')
-    def validate_database_url(cls, v, values):
-        """Use local database URL for development if available."""
-        if values.get('local_database_url') and values.get('environment') == 'development':
-            return values['local_database_url']
-        return v
     
     @property
     def is_development(self) -> bool:

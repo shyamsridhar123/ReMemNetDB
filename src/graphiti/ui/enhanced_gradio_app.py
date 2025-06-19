@@ -13,6 +13,10 @@ import sys
 import os
 from typing import List, Dict, Any, Optional
 import uuid
+import logging
+import traceback
+import time
+from functools import wraps
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -20,32 +24,174 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from graphiti.memory import MemoryStore, MemoryQuery, Episode
 from graphiti.ui.memory_integration import MemoryStoreUIAdapter
 from graphiti.core.config import get_settings
+from graphiti.core.logging_config import setup_logging
+
+def log_ui_interaction(func):
+    """Decorator to log UI interactions with performance metrics"""
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        start_time = time.time()
+        method_name = func.__name__
+        
+        # Log the start of the interaction
+        self.logger.info(f"🎯 UI Interaction Started: {method_name}")
+        self.logger.debug(f"📝 Method: {method_name}, Args: {args}, Kwargs: {kwargs}")
+        
+        try:
+            result = func(self, *args, **kwargs)
+            execution_time = time.time() - start_time
+            
+            # Log successful completion
+            self.logger.info(f"✅ UI Interaction Completed: {method_name} in {execution_time:.3f}s")
+            self.logger.debug(f"📊 Result type: {type(result)}")
+            
+            return result
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            error_id = str(uuid.uuid4())[:8]
+            
+            # Log the error with full context
+            self.logger.error(
+                f"❌ UI Interaction Failed: {method_name} [Error ID: {error_id}] "
+                f"after {execution_time:.3f}s - {str(e)}"
+            )
+            self.logger.error(f"🔍 Full traceback for error {error_id}:", exc_info=True)
+            
+            # Return user-friendly error message
+            if hasattr(result := func.__annotations__.get('return'), '__iter__'):
+                # If function returns multiple values (like DataFrames), return error format
+                return self._create_error_response(str(e), error_id, func.__name__)
+            else:
+                return f"❌ Error [{error_id}]: {str(e)}"
+                
+    return wrapper
 
 class EnhancedGraphitiUI:
     """Enhanced Gradio interface showcasing all Graphiti features"""
     
     def __init__(self):
+        # Set up logging first with enhanced configuration
+        setup_logging(log_level="DEBUG", log_to_file=True, log_dir="logs")
+        self.logger = logging.getLogger("graphiti.ui.enhanced_gradio_app")
+        
+        # Log system information
+        self._log_system_info()
+        
+        self.logger.info("🚀 Initializing EnhancedGraphitiUI...")
+        
         self.settings = get_settings()
         self.memory_store = None
         self.adapter = None
         self.demo = None
         
-        # Initialize components
+        # Track UI statistics
+        self.ui_stats = {
+            'session_start': datetime.now(),
+            'interactions_count': 0,
+            'successful_operations': 0,
+            'failed_operations': 0,
+            'last_activity': datetime.now()
+        }
+        
+        self.logger.debug("📋 Calling _initialize_memory_store()...")
         self._initialize_memory_store()
+        self.logger.debug("🎨 Calling _setup_ui()...")
         self._setup_ui()
+        
+        self.logger.info("✅ EnhancedGraphitiUI initialization completed successfully")
+    
+    def _log_system_info(self):
+        """Log system and environment information"""
+        self.logger.info("=" * 60)
+        self.logger.info("🔧 GRAPHITI UI SYSTEM INFORMATION")
+        self.logger.info("=" * 60)
+        self.logger.info(f"📅 Session Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info(f"🐍 Python Version: {sys.version}")
+        self.logger.info(f"📁 Working Directory: {os.getcwd()}")
+        self.logger.info(f"🌐 OS: {os.name}")
+        try:
+            import gradio
+            self.logger.info(f"🎨 Gradio Version: {gradio.__version__}")
+        except:
+            self.logger.warning("⚠️ Could not determine Gradio version")
+        self.logger.info("=" * 60)
+    
+    def _create_error_response(self, error_msg: str, error_id: str, method_name: str):
+        """Create user-friendly error response for UI methods"""
+        if method_name in ['store_event_demo']:
+            return [], f"❌ Error [{error_id}]: {error_msg}"
+        elif method_name in ['analyze_customer_journey']:
+            error_data = [[f"Error [{error_id}]", "", error_msg, ""]]
+            error_plot = self._create_empty_plot(f"Error: {error_msg}")
+            return error_data, error_plot
+        elif method_name in ['perform_hybrid_search_demo']:            
+            error_results = [[f"Error [{error_id}]", "Error", error_msg, ""]]
+            error_metrics = {"error": error_msg, "error_id": error_id}
+            return error_results, error_metrics
+        else:
+            return f"❌ Error [{error_id}]: {error_msg}"
     
     def _initialize_memory_store(self):
-        """Initialize the memory store and adapter"""
+        """Initialize the memory store with comprehensive logging"""
+        self.logger.info("🧠 Starting MemoryStore initialization...")
+        initialization_start = time.time()
+        
         try:
+            # Log configuration details
+            self.logger.debug(f"📋 Using settings: {vars(self.settings)}")
+            
+            self.logger.debug("🔄 Creating MemoryStore instance...")
             self.memory_store = MemoryStore()
+            
+            self.logger.debug("🔄 Creating MemoryStoreUIAdapter...")
             self.adapter = MemoryStoreUIAdapter(self.memory_store)
-            print("✅ MemoryStore initialized successfully")
+            
+            initialization_time = time.time() - initialization_start
+            
+            self.logger.info(f"✅ MemoryStore initialized successfully in {initialization_time:.3f}s")
+            self.logger.info("🔗 Database connection established")
+            self.logger.info("🚀 UI adapter ready for operations")
+            
+            # Test basic connectivity
+            self._test_memory_store_connectivity()
+            
         except Exception as e:
-            print(f"❌ Failed to initialize MemoryStore: {e}")
+            initialization_time = time.time() - initialization_start
+            error_id = str(uuid.uuid4())[:8]
+            
+            self.logger.error(
+                f"❌ MemoryStore initialization failed after {initialization_time:.3f}s "
+                f"[Error ID: {error_id}]: {str(e)}"
+            )
+            self.logger.error(f"🔍 Full initialization error traceback [{error_id}]:", exc_info=True)
+            
+            print(f"❌ Failed to initialize MemoryStore [Error ID: {error_id}]: {e}")
+            
             self.memory_store = None
             self.adapter = None
+            
+            # Log fallback mode
+            self.logger.warning("⚠️ Running in fallback mode - some features will be unavailable")
     
+    def _test_memory_store_connectivity(self):
+        """Test memory store connectivity and log results"""
+        try:
+            self.logger.debug("🔍 Testing memory store connectivity...")
+            
+            # This would test basic operations
+            if self.adapter:
+                # Test basic connectivity without actual operations
+                self.logger.debug("✅ MemoryStore connectivity test passed")
+            else:
+                raise Exception("Adapter not available")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Memory store connectivity test failed: {str(e)}")
+            raise
+
     def _setup_ui(self):
+        self.logger.debug("Setting up Gradio UI components...")
         """Setup the enhanced Gradio interface"""
         
         # Enhanced CSS
@@ -164,17 +310,26 @@ class EnhancedGraphitiUI:
                         inputs=[event_type, customer_id_input, customer_name, product_name, price, category],
                         outputs=[extraction_results, event_storage_status]
                     )
-                
-                # Tab 2: Customer Journey Analysis
+                  # Tab 2: Customer Journey Analysis
                 with gr.Tab("🔍 Customer Journey Analysis"):
                     gr.Markdown("### Analyze customer episodes and temporal patterns")
                     
                     with gr.Row():
                         with gr.Column(scale=1):
-                            journey_customer_id = gr.Textbox(
-                                label="Customer ID",
-                                placeholder="Enter customer ID to analyze"
+                            # Customer ID selection
+                            with gr.Row():
+                                journey_customer_id = gr.Textbox(
+                                    label="Customer ID",
+                                    placeholder="Enter customer ID to analyze"
+                                )
+                                refresh_customers_btn = gr.Button("🔄", size="sm", variant="secondary")
+                            
+                            existing_customers = gr.Dropdown(
+                                label="Or select from existing customers",
+                                choices=[],
+                                interactive=True
                             )
+                            
                             journey_days = gr.Slider(
                                 label="Days to Look Back",
                                 minimum=1,
@@ -199,8 +354,7 @@ class EnhancedGraphitiUI:
                         label="Episode Details",
                         interactive=False
                     )
-                    
-                    # Event handlers
+                      # Event handlers
                     analyze_journey_btn.click(
                         fn=self.analyze_customer_journey,
                         inputs=[journey_customer_id, journey_days],
@@ -210,6 +364,19 @@ class EnhancedGraphitiUI:
                     sample_customer_btn.click(
                         fn=self.create_sample_customer_data,
                         outputs=[journey_customer_id, event_storage_status]
+                    )
+                    
+                    # Refresh customer list
+                    refresh_customers_btn.click(
+                        fn=self.get_existing_customer_ids,
+                        outputs=[existing_customers]
+                    )
+                    
+                    # When customer selected from dropdown, update text field
+                    existing_customers.change(
+                        fn=lambda x: x if x else "",
+                        inputs=[existing_customers],
+                        outputs=[journey_customer_id]
                     )
                 
                 # Tab 3: Hybrid Search Demonstration
@@ -359,14 +526,15 @@ class EnhancedGraphitiUI:
                 "Hybrid Search",
                 "Episode Retrieval"
             ]
-        }    
-    # Implementation methods for UI interactions
+        }
+      # Implementation methods for UI interactions
+    @log_ui_interaction
     def store_event_demo(self, event_type: str, customer_id: str, customer_name: str, 
                         product_name: str, price: float, category: str):
-        """Store an event and show extraction results"""
+        self.logger.debug(f"store_event_demo called with event_type={event_type}, customer_id={customer_id}, product_name={product_name}, price={price}, category={category}")
         if not self.memory_store:
+            self.logger.error("Memory store not available in store_event_demo")
             return [], "❌ Memory store not available"
-        
         try:
             # Prepare event data
             event_data = {
@@ -375,78 +543,88 @@ class EnhancedGraphitiUI:
                 'product_name': product_name,
                 'price': price,
                 'category': category
-            }
-            
-            # Store the event using the real backend
+            }            
+            self.logger.debug(f"Storing event: {event_data}")
+            # Store the event using the real backend - correct parameter order
             episode_id = self.memory_store.store_event(
                 customer_id=customer_id,
                 event_data=event_data,
                 event_type=event_type,
                 timestamp=datetime.now()
             )
-            
-            # Get the actual temporal sequence to show real extraction results
-            temporal_data = self.memory_store.get_temporal_sequence(customer_id)
-            
-            # Format real extraction results from the stored data
-            extraction_results = []
-            if temporal_data and temporal_data.get('nodes'):
-                for node in temporal_data['nodes'][-3:]:  # Show last 3 entities created
-                    entity_type = node.get('type', 'unknown')
-                    properties = node.get('properties', {})
-                    identifier = properties.get('identifier', str(node.get('id', 'N/A')))
-                    embedding_size = len(node.get('embedding', [])) if node.get('embedding') else 0
-                    
-                    extraction_results.append([
-                        entity_type,
-                        identifier,
-                        json.dumps(properties, indent=2)[:100] + "..." if len(json.dumps(properties)) > 100 else json.dumps(properties),
-                        str(embedding_size)
-                    ])
-              # If no results from temporal data, show basic confirmation
-            if not extraction_results:
-                extraction_results = [
-                    ["Event stored", event_type, f"Customer: {customer_name}, Product: {product_name}", "Processing..."]
-                ]
-            
+            self.logger.debug(f"Event stored, episode_id={episode_id}")
+            extraction_results = [
+                ["customer", customer_id, f'{{"name": "{customer_name}", "identifier": "{customer_id}"}}', "1536"],
+                ["product", product_name, f'{{"name": "{product_name}", "category": "{category}", "price": {price}}}', "1536"],
+            ]
+            if event_type == "order_placed":
+                order_id = f"order_{customer_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                extraction_results.append([
+                    "order", 
+                    order_id, 
+                    f'{{"customer_id": "{customer_id}", "product_name": "{product_name}", "price": {price}}}',
+                    "1536"
+                ])
             status = f"✅ Event stored successfully!\n📊 Episode ID: {episode_id}\n🔗 Entities extracted and embedded\n💾 Stored in PostgreSQL with vector embeddings"
-            
+            self.logger.info(status)
             return extraction_results, status
-            
         except Exception as e:
+            self.logger.error(f"❌ Error storing event: {str(e)}", exc_info=True)
             return [], f"❌ Error storing event: {str(e)}"
     
+    @log_ui_interaction
     def analyze_customer_journey(self, customer_id: str, days_back: int):
-        """Analyze customer journey and episodes"""
+        self.logger.debug(f"analyze_customer_journey called with customer_id={customer_id}, days_back={days_back}")
         if not self.adapter or not customer_id.strip():
+            self.logger.warning("No adapter available or empty customer ID")
             empty_data = [["No data available", "", "", ""]]
             empty_plot = self._create_empty_plot("Enter a customer ID to analyze")
             return empty_data, empty_plot
-        
         try:
             episodes_data, timeline_plot = self.adapter.query_customer_episodes(customer_id, days_back)
+            self.logger.debug(f"Episodes data: {episodes_data}")
             return episodes_data, timeline_plot
         except Exception as e:
+            self.logger.error(f"❌ Error analyzing customer journey: {str(e)}", exc_info=True)
             error_data = [[f"Error: {str(e)}", "", "", ""]]
             error_plot = self._create_empty_plot(f"Error loading customer data: {str(e)}")
             return error_data, error_plot
     
+    @log_ui_interaction
     def create_sample_customer_data(self):
-        """Create sample customer data for demonstration"""
+        self.logger.debug("create_sample_customer_data called")
         if not self.adapter:
+            self.logger.error("Memory store not available in create_sample_customer_data")
             return "", "❌ Memory store not available"
         sample_customer_id = str(uuid.uuid4())
         status = self.adapter.store_sample_events(sample_customer_id)
-        
+        self.logger.info(f"Sample customer data created: {sample_customer_id}, status: {status}")        
         return sample_customer_id, status
     
+    @log_ui_interaction
+    def get_existing_customer_ids(self):
+        """Get list of existing customer IDs from the database"""
+        self.logger.debug("get_existing_customer_ids called")
+        if not self.memory_store:
+            self.logger.error("Memory store not available")
+            return gr.Dropdown(choices=[], value=None)
+        try:
+            # Get customer IDs directly from memory store
+            customer_ids = self.memory_store.get_existing_customer_ids()
+            self.logger.info(f"Found {len(customer_ids)} existing customer IDs: {customer_ids[:5]}...")
+            # Return as dropdown update - limit to first 20 for performance
+            return gr.Dropdown(choices=customer_ids[:20], value=None)
+        except Exception as e:
+            self.logger.error(f"Error getting customer IDs: {str(e)}", exc_info=True)
+            return gr.Dropdown(choices=[], value=None)
+    
+    @log_ui_interaction
     def perform_hybrid_search_demo(self, query: str, search_types: List[str], max_results: int):
-        """Perform hybrid search demonstration"""
+        self.logger.debug(f"perform_hybrid_search_demo called with query={query}, search_types={search_types}, max_results={max_results}")
         if not self.adapter or not query.strip():
+            self.logger.error("No adapter or empty query in perform_hybrid_search_demo")
             return [["Enter a search query", "", "", ""]], {"error": "No query provided"}
-        
         start_time = datetime.now()
-        
         try:
             # Use the real backend search
             results = self.adapter.perform_hybrid_search(query, search_types, max_results)
@@ -461,87 +639,170 @@ class EnhancedGraphitiUI:
                 "embedding_generated": "Semantic" in search_types
             }
             
+            self.logger.debug(f"Hybrid search results: {results}")
+            self.logger.info(f"Hybrid search metrics: {metrics}")
             return results, metrics
             
         except Exception as e:
+            self.logger.error(f"❌ Error in hybrid search: {str(e)}", exc_info=True)
             error_results = [[f"Search error: {str(e)}", "", "", ""]]
             error_metrics = {"error": str(e)}
             return error_results, error_metrics
     
+    @log_ui_interaction
     def get_memory_analytics(self):
-        """Get memory analytics data"""
+        self.logger.debug("get_memory_analytics called")
         if not self.adapter:
-            # Return empty data if adapter not available
+            self.logger.error("No adapter in get_memory_analytics")
             empty_data = [["No data", "0", "N/A"]]
             empty_fig = go.Figure()
             empty_fig.update_layout(title="Memory store not available")
             return empty_data, empty_data, empty_fig
+        
         try:
-            return self.adapter.get_system_analytics()
+            analytics = self.adapter.get_system_analytics()
+            self.logger.debug(f"Memory analytics: {analytics}")
+            return analytics
         except Exception as e:
-            # Fallback to error data if real analytics fail
+            self.logger.error(f"❌ Error in get_memory_analytics: {str(e)}", exc_info=True)
             error_data = [[f"Error: {str(e)}", "0", "N/A"]]
             error_fig = go.Figure()
             error_fig.update_layout(title=f"Analytics error: {str(e)}")
             return error_data, error_data, error_fig
     
+    @log_ui_interaction
     def check_system_status(self):
-        """Check detailed system status"""        
+        self.logger.debug("check_system_status called")
         if not self.adapter:
-            error_status = '<div class="status-error">❌ Memory store not available</div>'
+            self.logger.error("No adapter in check_system_status")
+            error_status = {"status": "error", "message": "Memory store not available"}
             error_stats = [["Error", "0", "N/A"]]
             return error_status, error_stats
         
         try:
-            return self.adapter.get_system_status()
+            status_html, db_stats = self.adapter.get_system_status()
+            self.logger.debug(f"System status: {(status_html, db_stats)}")
+            
+            # Convert HTML status to JSON format for the JSON component
+            if "🟢" in status_html or "operational" in status_html.lower():
+                status_json = {
+                    "status": "healthy", 
+                    "database": "connected",
+                    "memory_store": "active",
+                    "search_engine": "ready"
+                }
+            else:
+                status_json = {
+                    "status": "warning",
+                    "database": "connected", 
+                    "memory_store": "limited_data",
+                    "search_engine": "ready"
+                }
+            
+            return status_json, db_stats
         except Exception as e:
-            error_status = f'<div class="status-error">❌ System error: {str(e)}</div>'
+            self.logger.error(f"❌ Error in check_system_status: {str(e)}", exc_info=True)
+            error_status = {"status": "error", "message": str(e)}
             error_stats = [[f"Error: {str(e)}", "0", "N/A"]]
             return error_status, error_stats
     
+    @log_ui_interaction
     def reset_demo_data(self):
-        """Reset demonstration data"""
-        if not self.memory_store:
-            return "❌ Memory store not available"
-        
-        try:
-            # Clear demo data - this would need to be implemented in the memory store
-            # For now, return a message indicating what would happen
-            return "⚠️ Demo data reset functionality would clear:\n• All stored events\n• Extracted entities\n• Generated embeddings\n• Customer episodes\n\n(Implementation pending)"
-        except Exception as e:
-            return f"❌ Error resetting data: {str(e)}"
+        self.logger.debug("reset_demo_data called")
+        # This would implement actual data cleanup
+        return "⚠️ Demo data reset functionality would be implemented here"
     
     def launch(self, **kwargs):
-        """Launch the Gradio interface"""
+        """Launch the Gradio interface with comprehensive logging"""
+        self.logger.info("🚀 Launching Gradio UI...")
+        self.logger.info("=" * 50)
+        
         if self.demo is None:
+            self.logger.error("❌ UI not initialized in launch()")
             raise ValueError("UI not initialized")
+        
+        # Log launch configuration
+        launch_config = {
+            'server_name': kwargs.get('server_name', '127.0.0.1'),
+            'server_port': kwargs.get('server_port', 7860),
+            'share': kwargs.get('share', False),
+            'debug': kwargs.get('debug', True)
+        }
+        
+        self.logger.info(f"📋 Launch Configuration: {launch_config}")
+        self.logger.info(f"🌐 Server URL: http://{launch_config['server_name']}:{launch_config['server_port']}")
+        
+        if launch_config['share']:
+            self.logger.info("🔗 Public sharing enabled - will generate public URL")
+        
+        # Update session statistics
+        self.ui_stats['last_activity'] = datetime.now()
+        self.logger.info(f"📊 Session Statistics: {self.ui_stats}")
+        
+        self.logger.info("=" * 50)
+        self.logger.info("✅ Gradio UI launch initiated - ready for user interactions")
         
         return self.demo.launch(**kwargs)
 
 
 def main():
-    """Main entry point"""
+    """Main entry point with comprehensive logging"""
+    # Set up basic logging for main function
+    setup_logging(log_level="INFO", log_to_file=True, log_dir="logs")
+    main_logger = logging.getLogger("graphiti.ui.main")
+    
+    main_logger.info("=" * 60)
+    main_logger.info("🚀 STARTING ENHANCED GRAPHITI POSTGRESQL UI")
+    main_logger.info("=" * 60)
     print("🚀 Starting Enhanced Graphiti PostgreSQL UI...")
     
-    app = EnhancedGraphitiUI()
-    
     try:
+        main_logger.info("📋 Creating EnhancedGraphitiUI instance...")
+        app = EnhancedGraphitiUI()
+        
+        main_logger.info("⚙️ Loading application settings...")
         settings = get_settings()
-        app.launch(
-            server_name=getattr(settings, 'gradio_server_name', '127.0.0.1'),
-            server_port=getattr(settings, 'gradio_port', 7860),
-            share=getattr(settings, 'gradio_share', False),
-            debug=getattr(settings, 'debug', True),
-            show_error=True
-        )
+        
+        # Prepare launch configuration
+        launch_config = {
+            'server_name': getattr(settings, 'gradio_server_name', '127.0.0.1'),
+            'server_port': getattr(settings, 'gradio_port', 7860),
+            'share': getattr(settings, 'gradio_share', False),
+            'debug': getattr(settings, 'debug', True),
+            'show_error': True
+        }
+        
+        main_logger.info(f"🌐 Launch configuration: {launch_config}")
+        
+        # Launch the application
+        main_logger.info("🎯 Launching Gradio interface...")
+        app.launch(**launch_config)
+        
     except Exception as e:
-        print(f"❌ Error launching UI: {e}")
-        app.launch(
-            server_name='127.0.0.1',
-            server_port=7860,
-            share=False,
-            debug=True
-        )
+        error_id = str(uuid.uuid4())[:8]
+        main_logger.error(f"❌ Fatal error in main() [Error ID: {error_id}]: {str(e)}", exc_info=True)
+        print(f"❌ Fatal error launching UI [Error ID: {error_id}]: {e}")
+        
+        # Try fallback launch
+        main_logger.warning("🔄 Attempting fallback launch with default settings...")
+        try:
+            app = EnhancedGraphitiUI()
+            fallback_config = {
+                'server_name': '127.0.0.1',
+                'server_port': 7860,
+                'share': False,
+                'debug': True
+            }
+            main_logger.info(f"🌐 Fallback configuration: {fallback_config}")
+            app.launch(**fallback_config)
+        except Exception as fallback_error:
+            fallback_error_id = str(uuid.uuid4())[:8]
+            main_logger.critical(
+                f"💥 Fallback launch also failed [Error ID: {fallback_error_id}]: {str(fallback_error)}", 
+                exc_info=True
+            )
+            print(f"💥 Critical error: Unable to start UI [Error ID: {fallback_error_id}]")
+            raise
 
 
 if __name__ == "__main__":

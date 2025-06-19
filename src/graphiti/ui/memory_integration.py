@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from sqlalchemy import func, text
 
 from graphiti.memory import MemoryStore, MemoryQuery, Episode
 from graphiti.core.models import Event
@@ -25,8 +26,41 @@ class MemoryStoreUIAdapter:
     def query_customer_episodes(self, customer_id: str, days_back: int = 30) -> tuple:
         """Query customer episodes and return formatted data for Gradio"""
         try:
+            # Add logging to debug the issue
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"🔍 query_customer_episodes called with customer_id={customer_id}, days_back={days_back}")
+            
+            # Validate customer_id
+            if not customer_id or not customer_id.strip():
+                logger.warning("❌ Empty customer_id provided")
+                error_data = [["Error: Empty customer ID", "", "", ""]]
+                empty_fig = go.Figure()
+                empty_fig.add_annotation(
+                    text="Please enter a valid customer ID",
+                    xref="paper", yref="paper", x=0.5, y=0.5,
+                    showarrow=False, font=dict(size=16)
+                )
+                empty_fig.update_layout(title="Customer Journey - Invalid ID")
+                return error_data, empty_fig
+            
             # Get episodes from memory store
+            logger.debug(f"📋 Calling memory_store.get_customer_episodes...")
             episodes = self.memory_store.get_customer_episodes(customer_id, days_back)
+            logger.info(f"📊 Retrieved {len(episodes)} episodes from memory store")
+            
+            # Check if we have any episodes
+            if not episodes:
+                logger.warning(f"⚠️ No episodes found for customer {customer_id}")
+                error_data = [[f"No episodes found for customer {customer_id[:16]}...", "", "", ""]]
+                empty_fig = go.Figure()
+                empty_fig.add_annotation(
+                    text=f"No timeline data found for customer: {customer_id}",
+                    xref="paper", yref="paper", x=0.5, y=0.5,
+                    showarrow=False, font=dict(size=16)
+                )
+                empty_fig.update_layout(title=f"Customer Journey - {customer_id}")
+                return error_data, empty_fig
             
             # Format for Gradio DataFrame
             episodes_data = []
@@ -68,12 +102,19 @@ class MemoryStoreUIAdapter:
             
             # Create timeline visualization
             timeline_fig = self._create_timeline_plot(timeline_data, customer_id)
+            logger.info(f"✅ Successfully created timeline with {len(episodes_data)} episodes")
             
             return episodes_data, timeline_fig
             
         except Exception as e:
+            logger.error(f"❌ Error in query_customer_episodes: {str(e)}", exc_info=True)
             error_data = [[f"Error querying episodes: {str(e)}", "", "", ""]]
             empty_fig = go.Figure()
+            empty_fig.add_annotation(
+                text=f"Error loading customer data: {str(e)}",
+                xref="paper", yref="paper", x=0.5, y=0.5,
+                showarrow=False, font=dict(size=14, color="red")
+            )
             empty_fig.update_layout(title="Error loading timeline")
             return error_data, empty_fig
     
@@ -101,15 +142,17 @@ class MemoryStoreUIAdapter:
                 
                 # Execute search
                 search_results = self.memory_store.query_memory(memory_query)
-                
-                # Format results
+                  # Format results
                 for result in search_results:
-                    score = getattr(result, 'score', 0.0)
-                    entity_type = getattr(result, 'entity_type', 'unknown')
-                    identifier = getattr(result, 'identifier', 'N/A')
+                    # Memory object attributes
+                    score = getattr(result, 'relevance_score', 0.0)
                     
-                    # Extract additional info from properties
-                    properties = getattr(result, 'properties', {})
+                    # Extract entity info from content
+                    content = getattr(result, 'content', {})
+                    entity_type = content.get('entity_type', 'unknown')
+                    identifier = content.get('identifier', 'N/A')
+                    properties = content.get('properties', {})
+                    
                     if isinstance(properties, str):
                         try:
                             properties = json.loads(properties)
@@ -120,7 +163,7 @@ class MemoryStoreUIAdapter:
                     if properties.get('name'):
                         description += f" - {properties['name']}"
                     
-                    timestamp = getattr(result, 'valid_from', 'N/A')
+                    timestamp = getattr(result, 'timestamp', 'N/A')
                     if hasattr(timestamp, 'strftime'):
                         timestamp = timestamp.strftime("%Y-%m-%d %H:%M")
                     
@@ -170,12 +213,21 @@ class MemoryStoreUIAdapter:
                     'timestamp': datetime.now(timezone.utc) - timedelta(minutes=30)
                 }
             ]
-            
-            # Store each event
+              # Store each event
             stored_count = 0
             for event_data in sample_events:
                 event_type = event_data.pop('event_type')
                 timestamp = event_data.pop('timestamp')
+                
+                # Add debug logging
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"🔧 About to call store_event with:")
+                logger.debug(f"  customer_id: {customer_id}")
+                logger.debug(f"  event_data: {event_data}")
+                logger.debug(f"  event_type: {event_type}")
+                logger.debug(f"  timestamp: {timestamp}")
+                logger.debug(f"  Method signature: {self.memory_store.store_event.__code__.co_varnames}")
                 
                 episode_id = self.memory_store.store_event(
                     customer_id=customer_id,
@@ -311,71 +363,42 @@ class MemoryStoreUIAdapter:
                 x=0.5, y=0.5,
                 xref="paper", yref="paper",
                 showarrow=False,
-                font=dict(size=14, color="red")
-            )
+                font=dict(size=14, color="red")            )
             fig.update_layout(title="Chart Error")
             return fig
-            # You could query the database directly here for metrics
-            # For now, return basic structure
-            return analytics
-            
-        except Exception as e:
-            return {'error': str(e)}
     
     def get_system_analytics(self) -> tuple:
         """Get real system analytics from the database"""
         try:
-            # Get entity statistics
+            # Import the database manager
+            from graphiti.core.database import db_manager
+            from graphiti.core.models import TemporalNode, TemporalEdge
+            
             entity_stats = []
-            
-            # Query for entity counts by type
-            entity_query = """
-                SELECT 
-                    COALESCE(properties->>'type', 'unknown') as entity_type,
-                    COUNT(*) as count,
-                    MAX(recorded_at) as latest_update
-                FROM nodes 
-                WHERE valid_to IS NULL OR valid_to > NOW()
-                GROUP BY properties->>'type'
-                ORDER BY count DESC
-            """
-            
-            with self.memory_store.db.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(entity_query)
-                    entity_results = cursor.fetchall()
-                    
-                    for row in entity_results:
-                        entity_type, count, latest = row
-                        latest_str = latest.strftime("%Y-%m-%d %H:%M:%S") if latest else "N/A"
-                        entity_stats.append([entity_type, str(count), latest_str])
-            
-            # Get relationship statistics
             relationship_stats = []
             
-            relationship_query = """
-                SELECT 
-                    relationship_type,
-                    COUNT(*) as count,
-                    AVG(CASE 
-                        WHEN properties->>'confidence' IS NOT NULL 
-                        THEN (properties->>'confidence')::float 
-                        ELSE 0.9 
-                    END) as avg_confidence
-                FROM edges 
-                WHERE valid_to IS NULL OR valid_to > NOW()
-                GROUP BY relationship_type
-                ORDER BY count DESC
-            """
-            
-            with self.memory_store.db.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(relationship_query)
-                    relationship_results = cursor.fetchall()
-                    
-                    for row in relationship_results:
-                        rel_type, count, avg_conf = row
-                        relationship_stats.append([rel_type, str(count), f"{avg_conf:.2f}"])
+            # Use the same pattern as MemoryStore
+            with db_manager.get_session() as session:                # Get entity statistics
+                entity_results = session.query(
+                    TemporalNode.type,
+                    func.count(TemporalNode.id).label('count'),
+                    func.max(TemporalNode.valid_from).label('latest_update')
+                ).filter(
+                    (TemporalNode.valid_to.is_(None)) | (TemporalNode.valid_to > func.now())
+                ).group_by(TemporalNode.type).order_by(text('count DESC')).all()
+                
+                for entity_type, count, latest_update in entity_results:
+                    latest_str = latest_update.strftime("%Y-%m-%d %H:%M:%S") if latest_update else "N/A"
+                    entity_stats.append([entity_type or "unknown", str(count), latest_str])                # Get relationship statistics  
+                relationship_results = session.query(
+                    TemporalEdge.relationship_type,
+                    func.count(TemporalEdge.id).label('count')
+                ).filter(
+                    (TemporalEdge.valid_to.is_(None)) | (TemporalEdge.valid_to > func.now())
+                ).group_by(TemporalEdge.relationship_type).order_by(text('count DESC')).all()
+                
+                for rel_type, count in relationship_results:
+                    relationship_stats.append([rel_type or "unknown", str(count), "N/A"])
             
             # Create memory growth chart
             growth_fig = self._create_memory_growth_chart()
@@ -392,32 +415,33 @@ class MemoryStoreUIAdapter:
     def _create_memory_growth_chart(self) -> go.Figure:
         """Create memory growth chart from real database data"""
         try:
-            growth_query = """
-                SELECT 
-                    DATE_TRUNC('day', recorded_at) as date,
-                    COUNT(*) as daily_count,
-                    SUM(COUNT(*)) OVER (ORDER BY DATE_TRUNC('day', recorded_at)) as cumulative_count
-                FROM nodes 
-                WHERE recorded_at >= NOW() - INTERVAL '30 days'
-                GROUP BY DATE_TRUNC('day', recorded_at)
-                ORDER BY date
-            """
+            from graphiti.core.database import db_manager
+            from graphiti.core.models import TemporalNode
+            from sqlalchemy import func, text
             
             dates = []
             cumulative_counts = []
             
-            with self.memory_store.db.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(growth_query)
-                    results = cursor.fetchall()
-                    
-                    for row in results:
-                        date, daily_count, cumulative = row
-                        dates.append(date)
-                        cumulative_counts.append(cumulative)
-            
-            # Create the chart
+            with db_manager.get_session() as session:
+                # Query for daily node creation counts over the last 30 days
+                growth_results = session.query(
+                    func.date_trunc('day', TemporalNode.valid_from).label('date'),
+                    func.count(TemporalNode.id).label('daily_count')
+                ).filter(
+                    TemporalNode.valid_from >= func.now() - text("INTERVAL '30 days'")
+                ).group_by(
+                    func.date_trunc('day', TemporalNode.valid_from)
+                ).order_by(text('date')).all()
+                
+                # Calculate cumulative counts
+                cumulative = 0
+                for date, daily_count in growth_results:
+                    cumulative += daily_count
+                    dates.append(date)
+                    cumulative_counts.append(cumulative)
+              # Create the chart
             fig = go.Figure()
+            
             fig.add_trace(go.Scatter(
                 x=dates,
                 y=cumulative_counts,
@@ -449,23 +473,14 @@ class MemoryStoreUIAdapter:
     def get_system_status(self) -> tuple:
         """Get real system status from database"""
         try:
-            # Get database statistics
+            # Use the memory store's built-in system stats method
+            stats = self.memory_store.get_system_stats()
+            
+            # Format the stats for display
             db_stats = []
-            
-            # Query for table statistics
-            stats_queries = {
-                "events": "SELECT COUNT(*) FROM events",
-                "nodes": "SELECT COUNT(*) FROM nodes WHERE valid_to IS NULL OR valid_to > NOW()",
-                "edges": "SELECT COUNT(*) FROM edges WHERE valid_to IS NULL OR valid_to > NOW()"
-            }
-            
-            with self.memory_store.db.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    for table_name, query in stats_queries.items():
-                        cursor.execute(query)
-                        count = cursor.fetchone()[0]
-                        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        db_stats.append([table_name, str(count), current_time])
+            for key, value in stats.items():
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                db_stats.append([key, str(value), current_time])
             
             # Generate status HTML
             status_html = self._generate_status_html(db_stats)
@@ -550,3 +565,69 @@ class MemoryStoreUIAdapter:
             
         except Exception as e:
             return f"❌ Error storing sample events: {str(e)}"
+    
+    def _create_timeline_plot(self, timeline_data: List[Dict], customer_id: str) -> go.Figure:
+        """Create timeline plot for customer journey"""
+        try:
+            if not timeline_data:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text=f"No timeline data found for customer {customer_id}",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=16)
+                )
+                fig.update_layout(title=f"Customer Journey - {customer_id}")
+                return fig
+            
+            # Extract data for plotting
+            timestamps = [item['timestamp'] for item in timeline_data]
+            event_types = [item['event_type'] for item in timeline_data]
+            episode_ids = [item['episode_id'] for item in timeline_data]
+            event_counts = [item['event_count'] for item in timeline_data]
+            
+            # Create scatter plot
+            fig = go.Figure()
+            
+            fig.add_trace(go.Scatter(
+                x=timestamps,
+                y=episode_ids,
+                mode='markers+lines',
+                marker=dict(
+                    size=[count * 5 + 10 for count in event_counts],
+                    color=episode_ids,
+                    colorscale='Viridis',
+                    showscale=True,
+                    colorbar=dict(title="Episode")
+                ),
+                text=[f"Events: {count}<br>Type: {event_type}" 
+                      for count, event_type in zip(event_counts, event_types)],
+                hovertemplate='<b>Episode %{y}</b><br>' +
+                             'Time: %{x}<br>' +
+                             '%{text}<br>' +
+                             '<extra></extra>',
+                name='Customer Journey'
+            ))
+            
+            fig.update_layout(
+                title=f"Customer Journey Timeline - {customer_id}",
+                xaxis_title="Time",
+                yaxis_title="Episode",
+                template="plotly_white",
+                height=400,
+                hovermode='closest'
+            )
+            
+            return fig
+            
+        except Exception as e:
+            # Return error figure
+            fig = go.Figure()
+            fig.add_annotation(
+                text=f"Error creating timeline: {str(e)}",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=14, color="red")
+            )
+            fig.update_layout(title="Timeline Error")
+            return fig
