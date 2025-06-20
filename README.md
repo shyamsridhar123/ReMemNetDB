@@ -35,7 +35,7 @@ Imagine an AI agent that doesn't just store data—it **remembers like humans do
 
 <div align="center">
 
-https://github.com/user-attachments/assets/Graphiti-PostgreSQL.mp4
+![Graphiti PostgreSQL Demo](assets/Graphiti-PostgreSQL.gif)
 
 *🎬 Demo showcasing temporal graph visualization, semantic search, and AI-powered memory extraction*
 
