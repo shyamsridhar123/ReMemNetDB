@@ -412,15 +412,11 @@ We welcome contributions! Whether you're:
 - **🔬 Researchers** working on knowledge graph applications
 - **🚀 Startups** building the next generation of intelligent applications
 
----
-
 <div align="center">
 
 ## 🌟 Ready to Transform Your AI's Memory?
 
 **[⚡ Get Started Now](#-quick-start-from-zero-to-temporal-ai-in-5-minutes)** | **[📚 Read the Docs](docs/)** | **[🎮 Try the Demo](http://localhost:7860)**
-
----
 
 **Star ⭐ this repo if Graphiti PostgreSQL excited you about the future of AI memory!**
 
