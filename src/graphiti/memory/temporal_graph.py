@@ -932,3 +932,31 @@ class TemporalGraph:
                 }
                 for row in result
             ]
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get database statistics for the temporal graph."""
+        with self.db_manager.get_session() as session:
+            try:
+                # Count nodes, edges, and events
+                node_count = session.execute(text("SELECT COUNT(*) FROM temporal_graph.nodes")).scalar()
+                edge_count = session.execute(text("SELECT COUNT(*) FROM temporal_graph.edges")).scalar()
+                event_count = session.execute(text("SELECT COUNT(*) FROM temporal_graph.events")).scalar()
+                
+                return {
+                    'total_nodes': node_count,
+                    'total_edges': edge_count,
+                    'total_events': event_count,
+                    'database_stats': {
+                        'total_nodes': {'row_count': node_count, 'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+                        'total_edges': {'row_count': edge_count, 'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+                        'total_events': {'row_count': event_count, 'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+                    }
+                }
+            except Exception as e:
+                logger.error(f"❌ Failed to get database stats: {str(e)}")
+                return {
+                    'total_nodes': 0,
+                    'total_edges': 0,
+                    'total_events': 0,
+                    'error': str(e)
+                }

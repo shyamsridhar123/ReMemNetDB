@@ -237,10 +237,15 @@ class EntityExtractor:
                 entities = []
                 
                 for entity_data in entities_data:
-                    try:
+                    try:                        # Handle None/null identifiers properly
+                        identifier = entity_data.get("identifier")
+                        if identifier is None or identifier == "null":
+                            # Generate a fallback identifier based on entity type and timestamp
+                            identifier = f"{entity_data.get('type', 'entity')}_{uuid4().hex[:8]}"
+                        
                         entity = ExtractedEntity(
                             type=entity_data.get("type", "unknown"),
-                            identifier=entity_data.get("identifier", f"entity_{uuid4().hex[:8]}"),
+                            identifier=identifier,
                             properties=entity_data.get("properties", {}),
                             confidence=entity_data.get("confidence", 0.5),
                             source_event_id=str(event.id) if event.id else None

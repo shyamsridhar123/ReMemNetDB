@@ -166,7 +166,7 @@ class MemoryStore:
                 traceback.print_exc()
                 raise
             
-            logger.info(f"📊 Extracted {len(entities)} entities: {[e.type + ':' + e.identifier for e in entities]}")
+            logger.info(f"📊 Extracted {len(entities)} entities: {[e.type + ':' + (e.identifier or 'None') for e in entities]}")
             
             # Debug: Check if entities have embeddings
             for entity in entities:
@@ -290,7 +290,7 @@ class MemoryStore:
                 'nodes': [],
                 'total_events': 0,
                 'error': str(e)
-            }
+            }    
     def get_customer_episodes(self, customer_id: str, days_back: int = 30) -> List[Episode]:
         """Get all episodes for a specific customer."""
         logger.info(f"👤 Getting episodes for customer {customer_id}")
@@ -298,41 +298,35 @@ class MemoryStore:
         try:
             end_time = datetime.now(timezone.utc)
             start_time = end_time - timedelta(days=days_back)
-            time_range = TimeRange(start_time, end_time)
             
-            # Get temporal sequence for this customer
-            temporal_data = self.get_temporal_sequence(customer_id, True)
-            logger.debug(f"📊 Temporal data structure: {type(temporal_data)}")
-            
-            # Convert nodes to Event objects
-            events = []
-            if 'nodes' in temporal_data:
-                for node_data in temporal_data['nodes']:
+            # Query events directly from the events table
+            with db_manager.get_session() as session:
+                db_events = session.query(Event).filter(
+                    Event.event_data['customer_id'].astext == customer_id,
+                    Event.timestamp >= start_time,
+                    Event.timestamp <= end_time
+                ).order_by(Event.timestamp).all()
+                
+                logger.info(f"📊 Found {len(db_events)} events for customer {customer_id}")
+                
+                # Convert to our Event objects
+                events = []
+                for db_event in db_events:
                     try:
-                        logger.debug(f"🔧 Processing node_data: {type(node_data)} - {node_data}")
-                        
-                        # Ensure we have proper timestamp
-                        valid_from = node_data.get('valid_from')
-                        if not valid_from:
-                            logger.warning(f"⚠️ Node missing valid_from: {node_data}")
-                            continue
-                            
-                        # Create Event object from node data
                         event = Event(
-                            id=uuid.UUID(node_data.get('id', str(uuid.uuid4()))),
-                            event_type=node_data.get('type', 'node_event'),
-                            event_data=node_data.get('properties', {}),
-                            timestamp=valid_from,
-                            processed=True
+                            id=db_event.id,
+                            event_type=db_event.event_type,
+                            event_data=db_event.event_data,
+                            timestamp=db_event.timestamp,
+                            processed=db_event.processed
                         )
                         events.append(event)
-                        logger.debug(f"📊 Created event from node: {node_data.get('type')} at {event.timestamp}")
+                        logger.debug(f"📊 Event: {event.event_type} at {event.timestamp}")
                     except Exception as e:
-                        logger.warning(f"⚠️ Failed to create event from node data: {e}")
-                        logger.debug(f"⚠️ Node data was: {node_data}")
+                        logger.warning(f"⚠️ Failed to convert event: {e}")
                         continue
-            
-            logger.info(f"📊 Converted {len(events)} nodes to events")
+                
+                logger.info(f"📊 Converted {len(events)} database events to Event objects")
             
             # Group events into episodes (simple implementation)
             episodes = self._group_events_into_episodes(events, customer_id)
@@ -546,9 +540,9 @@ class MemoryStore:
         """Create an Episode object from a list of events."""
         if not events:
             raise ValueError("Cannot create episode from empty events list")
-        
         events.sort(key=lambda e: e.timestamp)
-          # Create summary from event types
+        
+        # Create summary from event types
         event_types = [e.event_type for e in events]
         summary = f"Episode with {len(events)} events: {', '.join(set(event_types))}"
         
@@ -803,15 +797,14 @@ class MemoryStore:
             },
             timestamp=result.valid_from,
             relevance_score=result.hybrid_score,
-            memory_type='hybrid',
-            context={
+            memory_type='hybrid',            context={
                 'semantic_score': result.semantic_score,
                 'keyword_score': result.keyword_score,
                 'graph_score': result.graph_score,
                 'found_by': result.found_by
             }
         )
-    
+
     def _convert_temporal_node_to_memory(self, node) -> Memory:
         """Convert TemporalNode to Memory."""
         return Memory(
@@ -826,7 +819,7 @@ class MemoryStore:
             memory_type='temporal',
             context={'valid_to': node.valid_to}
         )
-    
+
     def get_existing_customer_ids(self) -> List[str]:
         """Get all unique customer IDs from the database."""
         logger.debug("Getting existing customer IDs from database")
@@ -840,17 +833,35 @@ class MemoryStore:
         except Exception as e:
             logger.error(f"❌ Failed to get customer IDs: {str(e)}")
             return []
-    
+
     def _get_customer_ids_with_session(self, session: Session) -> List[str]:
         """Get customer IDs using a database session."""
         try:
-            # Query all temporal nodes that have customer_id in properties
-            result = session.query(TemporalNode.properties['customer_id'].astext.distinct()).filter(
+            # Query customer IDs from EVENTS table (where the actual customer activity is)
+            event_customer_ids = session.query(
+                Event.event_data['customer_id'].astext.distinct()
+            ).filter(
+                Event.event_data['customer_id'].astext.isnot(None)
+            ).all()
+            
+            # Also get customer IDs from nodes table (entities)
+            node_customer_ids = session.query(
+                TemporalNode.properties['customer_id'].astext.distinct()
+            ).filter(
                 TemporalNode.properties['customer_id'].astext.isnot(None)
             ).all()
             
-            customer_ids = [row[0] for row in result if row[0]]
-            logger.info(f"📊 Found {len(customer_ids)} unique customer IDs")
+            # Combine both sources and remove duplicates
+            all_customer_ids = set()
+            for row in event_customer_ids:
+                if row[0]:
+                    all_customer_ids.add(row[0])
+            for row in node_customer_ids:
+                if row[0]:
+                    all_customer_ids.add(row[0])
+            
+            customer_ids = list(all_customer_ids)
+            logger.info(f"📊 Found {len(customer_ids)} unique customer IDs ({len(event_customer_ids)} from events, {len(node_customer_ids)} from nodes)")
             return customer_ids
             
         except Exception as e:

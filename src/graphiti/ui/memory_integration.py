@@ -361,24 +361,26 @@ class MemoryStoreUIAdapter:
             fig.add_annotation(
                 text=f"Error creating chart: {str(e)}",
                 x=0.5, y=0.5,
-                xref="paper", yref="paper",
-                showarrow=False,
-                font=dict(size=14, color="red")            )
+                xref="paper", yref="paper",                showarrow=False,
+                font=dict(size=14, color="red")
+            )
             fig.update_layout(title="Chart Error")
             return fig
-    
+
     def get_system_analytics(self) -> tuple:
         """Get real system analytics from the database"""
         try:
             # Import the database manager
             from graphiti.core.database import db_manager
             from graphiti.core.models import TemporalNode, TemporalEdge
+            from sqlalchemy import func, text
             
             entity_stats = []
             relationship_stats = []
             
             # Use the same pattern as MemoryStore
-            with db_manager.get_session() as session:                # Get entity statistics
+            with db_manager.get_session() as session:
+                # Get entity statistics
                 entity_results = session.query(
                     TemporalNode.type,
                     func.count(TemporalNode.id).label('count'),
@@ -389,7 +391,9 @@ class MemoryStoreUIAdapter:
                 
                 for entity_type, count, latest_update in entity_results:
                     latest_str = latest_update.strftime("%Y-%m-%d %H:%M:%S") if latest_update else "N/A"
-                    entity_stats.append([entity_type or "unknown", str(count), latest_str])                # Get relationship statistics  
+                    entity_stats.append([entity_type or "unknown", str(count), latest_str])
+                
+                # Get relationship statistics  
                 relationship_results = session.query(
                     TemporalEdge.relationship_type,
                     func.count(TemporalEdge.id).label('count')
@@ -411,53 +415,66 @@ class MemoryStoreUIAdapter:
             empty_fig = go.Figure()
             empty_fig.update_layout(title="Error loading analytics data")
             return error_stats, error_stats, empty_fig
-    
+
     def _create_memory_growth_chart(self) -> go.Figure:
         """Create memory growth chart from real database data"""
         try:
             from graphiti.core.database import db_manager
-            from graphiti.core.models import TemporalNode
+            from graphiti.core.models import Event
             from sqlalchemy import func, text
             
             dates = []
             cumulative_counts = []
             
             with db_manager.get_session() as session:
-                # Query for daily node creation counts over the last 30 days
+                # Query for ALL events grouped by day using created_at (when stored in DB)
                 growth_results = session.query(
-                    func.date_trunc('day', TemporalNode.valid_from).label('date'),
-                    func.count(TemporalNode.id).label('daily_count')
-                ).filter(
-                    TemporalNode.valid_from >= func.now() - text("INTERVAL '30 days'")
+                    func.date_trunc('day', Event.created_at).label('date'),
+                    func.count(Event.id).label('daily_count')
                 ).group_by(
-                    func.date_trunc('day', TemporalNode.valid_from)
+                    func.date_trunc('day', Event.created_at)
                 ).order_by(text('date')).all()
                 
-                # Calculate cumulative counts
+                # Calculate cumulative counts over time
                 cumulative = 0
                 for date, daily_count in growth_results:
                     cumulative += daily_count
                     dates.append(date)
                     cumulative_counts.append(cumulative)
-              # Create the chart
+            
+            # Create the chart
             fig = go.Figure()
             
-            fig.add_trace(go.Scatter(
-                x=dates,
-                y=cumulative_counts,
-                mode='lines+markers',
-                name='Total Entities',
-                line=dict(color='#667eea', width=3),
-                marker=dict(size=6)
-            ))
-            
-            fig.update_layout(
-                title="Knowledge Graph Growth Over Time",
-                xaxis_title="Date",
-                yaxis_title="Entity Count",
-                height=400,
-                hovermode='x unified'
-            )
+            if dates and cumulative_counts:
+                fig.add_trace(go.Scatter(
+                    x=dates,
+                    y=cumulative_counts,
+                    mode='lines+markers',
+                    name='Total Events',
+                    line=dict(color='#667eea', width=3),
+                    marker=dict(size=6)
+                ))
+                
+                fig.update_layout(
+                    title="Knowledge Graph Growth Over Time (Events)",
+                    xaxis_title="Date",
+                    yaxis_title="Cumulative Event Count",
+                    height=400,
+                    hovermode='x unified'
+                )
+            else:
+                # Show message if no data
+                fig.add_annotation(
+                    text="No events found in the last 30 days",
+                    x=0.5, y=0.5,
+                    xref="paper", yref="paper",
+                    showarrow=False,
+                    font=dict(size=16)
+                )
+                fig.update_layout(
+                    title="Knowledge Graph Growth Over Time",
+                    height=400
+                )
             
             return fig
             
@@ -468,6 +485,7 @@ class MemoryStoreUIAdapter:
                 title=f"Memory Growth Chart - Error: {str(e)}",
                 height=400
             )
+            return fig
             return fig
     
     def get_system_status(self) -> tuple:
