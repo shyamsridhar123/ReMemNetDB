@@ -10,8 +10,8 @@ from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Index, fun
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-# Note: Vector type will be defined as Text for now, can be updated later
-# from pgvector.sqlalchemy import Vector
+# pgvector support for vector similarity search
+from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
 
@@ -38,9 +38,8 @@ class TemporalNode(Base):
     properties = Column(JSONB)
     valid_from = Column(DateTime(timezone=True), nullable=False)
     valid_to = Column(DateTime(timezone=True))
-    recorded_at = Column(DateTime(timezone=True), server_default=func.now())
-    # Vector embedding - using Text for now, will be converted to proper VECTOR type in database
-    embedding = Column(Text)  # Will store vector as text representation
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now())    # Vector embedding for semantic search using pgvector
+    embedding = Column(Vector(1536))  # OpenAI embedding dimension
     
     # Relationships
     outgoing_edges = relationship("TemporalEdge", foreign_keys="TemporalEdge.source_node_id", back_populates="source_node")

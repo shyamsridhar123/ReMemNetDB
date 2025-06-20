@@ -246,7 +246,6 @@ class EnhancedGraphitiUI:
                     value=self._get_status_html(),
                     label="System Status"
                 )
-            
             with gr.Tabs():
                 
                 # Tab 1: Event Storage & Processing
@@ -261,6 +260,8 @@ class EnhancedGraphitiUI:
                                 label="Event Type",
                                 value="order_placed"
                             )
+                            
+                            # Common fields for all events
                             customer_id_input = gr.Textbox(
                                 label="Customer ID",
                                 value=str(uuid.uuid4()),
@@ -271,21 +272,116 @@ class EnhancedGraphitiUI:
                                 value="Alice Johnson",
                                 placeholder="Enter customer name"
                             )
-                            product_name = gr.Textbox(
-                                label="Product Name", 
-                                value="Dell XPS 13 Laptop",
-                                placeholder="Enter product name"
-                            )
                             
-                            with gr.Row():
-                                price = gr.Number(
-                                    label="Price ($)",
-                                    value=1299.99,
-                                    minimum=0
+                            # Dynamic fields that change based on event type
+                            with gr.Group() as order_fields:
+                                product_name = gr.Textbox(
+                                    label="Product Name", 
+                                    value="Dell XPS 13 Laptop",
+                                    placeholder="Enter product name"
                                 )
-                                category = gr.Textbox(
+                                with gr.Row():
+                                    price = gr.Number(
+                                        label="Price ($)",
+                                        value=1299.99,
+                                        minimum=0
+                                    )
+                                    quantity = gr.Number(
+                                        label="Quantity",
+                                        value=1,
+                                        minimum=1
+                                    )
+                                order_id = gr.Textbox(
+                                    label="Order ID",
+                                    value="ORD-" + str(uuid.uuid4())[:8],
+                                    placeholder="Auto-generated"
+                                )
+                                shipping_address = gr.Textbox(
+                                    label="Shipping Address",
+                                    value="123 Tech Street, San Francisco, CA",
+                                    placeholder="Enter shipping address"
+                                )
+                            
+                            with gr.Group(visible=False) as product_view_fields:
+                                product_name_view = gr.Textbox(
+                                    label="Product Name",
+                                    value="Dell XPS 13 Laptop",
+                                    placeholder="Enter product name"
+                                )
+                                category_view = gr.Textbox(
                                     label="Category",
-                                    value="Electronics"
+                                    value="Electronics",
+                                    placeholder="Product category"
+                                )
+                                with gr.Row():
+                                    view_duration = gr.Number(
+                                        label="View Duration (seconds)",
+                                        value=120,
+                                        minimum=1
+                                    )
+                                    source_page = gr.Textbox(
+                                        label="Source Page",
+                                        value="product_catalog",
+                                        placeholder="Where they viewed from"
+                                    )
+                            
+                            with gr.Group(visible=False) as support_fields:
+                                product_name_support = gr.Textbox(
+                                    label="Product Name",
+                                    value="Dell XPS 13 Laptop",
+                                    placeholder="Product needing support"
+                                )
+                                issue_description = gr.Textbox(
+                                    label="Issue Description",
+                                    value="Laptop screen flickering intermittently",
+                                    placeholder="Describe the issue",
+                                    lines=3
+                                )
+                                with gr.Row():
+                                    priority = gr.Dropdown(
+                                        choices=["Low", "Medium", "High", "Critical"],
+                                        label="Priority",
+                                        value="Medium"
+                                    )
+                                    issue_category = gr.Dropdown(
+                                        choices=["Technical", "Billing", "General", "Product Defect"],
+                                        label="Issue Category",
+                                        value="Technical"
+                                    )
+                                contact_method = gr.Dropdown(
+                                    choices=["Phone", "Email", "Live Chat", "In-Store"],
+                                    label="Contact Method",
+                                    value="Live Chat"
+                                )
+                            
+                            with gr.Group(visible=False) as review_fields:
+                                product_name_review = gr.Textbox(
+                                    label="Product Name",
+                                    value="Dell XPS 13 Laptop",
+                                    placeholder="Product being reviewed"
+                                )
+                                with gr.Row():
+                                    rating = gr.Slider(
+                                        label="Rating",
+                                        minimum=1,
+                                        maximum=5,
+                                        value=5,
+                                        step=1
+                                    )
+                                    verified_purchase = gr.Checkbox(
+                                        label="Verified Purchase",
+                                        value=True
+                                    )
+                                review_title = gr.Textbox(
+                                    label="Review Title",
+                                    value="Excellent laptop for development",
+                                    placeholder="Review title"
+                                )
+                                review_text = gr.Textbox(
+                                    label="Review Text",
+                                    value="Great performance, excellent build quality. Perfect for programming work.",
+                                    placeholder="Write your review",
+                                    lines=4
                                 )
                             
                             store_event_btn = gr.Button("🚀 Store Event", variant="primary")
@@ -303,11 +399,37 @@ class EnhancedGraphitiUI:
                                 interactive=False,
                                 lines=3
                             )
+                      # Event type switching logic
+                    def update_event_form(event_type_selected):
+                        # Show/hide appropriate field groups based on event type
+                        return {
+                            order_fields: gr.update(visible=(event_type_selected == "order_placed")),
+                            product_view_fields: gr.update(visible=(event_type_selected == "product_viewed")),
+                            support_fields: gr.update(visible=(event_type_selected == "support_request")),
+                            review_fields: gr.update(visible=(event_type_selected == "review_posted"))
+                        }
                     
-                    # Event processing
+                    # Connect event type change to form updates
+                    event_type.change(
+                        fn=update_event_form,
+                        inputs=[event_type],
+                        outputs=[order_fields, product_view_fields, support_fields, review_fields]
+                    )
+                    
+                    # Event processing with all possible fields
                     store_event_btn.click(
                         fn=self.store_event_demo,
-                        inputs=[event_type, customer_id_input, customer_name, product_name, price, category],
+                        inputs=[
+                            event_type, customer_id_input, customer_name,
+                            # Order fields
+                            product_name, price, quantity, order_id, shipping_address,
+                            # Product view fields  
+                            product_name_view, category_view, view_duration, source_page,
+                            # Support fields
+                            product_name_support, issue_description, priority, issue_category, contact_method,
+                            # Review fields
+                            product_name_review, rating, verified_purchase, review_title, review_text
+                        ],
                         outputs=[extraction_results, event_storage_status]
                     )
                   # Tab 2: Customer Journey Analysis
@@ -527,50 +649,118 @@ class EnhancedGraphitiUI:
                 "Episode Retrieval"
             ]
         }
-      # Implementation methods for UI interactions
-    @log_ui_interaction
-    def store_event_demo(self, event_type: str, customer_id: str, customer_name: str, 
-                        product_name: str, price: float, category: str):
-        self.logger.debug(f"store_event_demo called with event_type={event_type}, customer_id={customer_id}, product_name={product_name}, price={price}, category={category}")
+      # Implementation methods for UI interactions    @log_ui_interaction
+    def store_event_demo(self, event_type: str, customer_id: str, customer_name: str,
+                        # Order fields
+                        product_name: str, price: float, quantity: int, order_id: str, shipping_address: str,
+                        # Product view fields
+                        product_name_view: str, category_view: str, view_duration: int, source_page: str,
+                        # Support fields  
+                        product_name_support: str, issue_description: str, priority: str, issue_category: str, contact_method: str,
+                        # Review fields
+                        product_name_review: str, rating: int, verified_purchase: bool, review_title: str, review_text: str):
+        
+        self.logger.debug(f"store_event_demo called with event_type={event_type}")
+        
         if not self.memory_store:
             self.logger.error("Memory store not available in store_event_demo")
             return [], "❌ Memory store not available"
+            
         try:
-            # Prepare event data
+            # Build event data based on event type
             event_data = {
                 'customer_id': customer_id,
                 'customer_name': customer_name,
-                'product_name': product_name,
-                'price': price,
-                'category': category
-            }            
-            self.logger.debug(f"Storing event: {event_data}")
-            # Store the event using the real backend - correct parameter order
+                'event_type': event_type
+            }
+            
+            extraction_results = [
+                ["customer", customer_id, f'{{"name": "{customer_name}", "identifier": "{customer_id}"}}', "1536"]
+            ]
+            
+            # Add event-specific data and entities
+            if event_type == "order_placed":
+                event_data.update({
+                    'product_name': product_name,
+                    'price': price,
+                    'quantity': quantity,
+                    'order_id': order_id,
+                    'shipping_address': shipping_address,
+                    'total_amount': price * quantity
+                })
+                extraction_results.extend([
+                    ["product", product_name, f'{{"name": "{product_name}", "price": {price}}}', "1536"],
+                    ["order", order_id, f'{{"customer_id": "{customer_id}", "product": "{product_name}", "total": {price * quantity}}}', "1536"],
+                    ["address", shipping_address, f'{{"address": "{shipping_address}", "customer_id": "{customer_id}"}}', "1536"]
+                ])
+                
+            elif event_type == "product_viewed":
+                event_data.update({
+                    'product_name': product_name_view,
+                    'category': category_view,
+                    'view_duration': view_duration,
+                    'source_page': source_page
+                })
+                extraction_results.extend([
+                    ["product", product_name_view, f'{{"name": "{product_name_view}", "category": "{category_view}"}}', "1536"],
+                    ["category", category_view, f'{{"name": "{category_view}"}}', "1536"],
+                    ["page", source_page, f'{{"page": "{source_page}", "duration": {view_duration}}}', "1536"]
+                ])
+                
+            elif event_type == "support_request":
+                event_data.update({
+                    'product_name': product_name_support,
+                    'issue_description': issue_description,
+                    'priority': priority,
+                    'issue_category': issue_category,
+                    'contact_method': contact_method
+                })
+                extraction_results.extend([
+                    ["product", product_name_support, f'{{"name": "{product_name_support}"}}', "1536"],
+                    ["issue", f"issue_{customer_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}", 
+                     f'{{"description": "{issue_description}", "priority": "{priority}", "category": "{issue_category}"}}', "1536"],
+                    ["support_channel", contact_method, f'{{"method": "{contact_method}"}}', "1536"]
+                ])
+                
+            elif event_type == "review_posted":
+                event_data.update({
+                    'product_name': product_name_review,
+                    'rating': rating,
+                    'verified_purchase': verified_purchase,
+                    'review_title': review_title,
+                    'review_text': review_text
+                })
+                extraction_results.extend([
+                    ["product", product_name_review, f'{{"name": "{product_name_review}"}}', "1536"],
+                    ["review", f"review_{customer_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}", 
+                     f'{{"title": "{review_title}", "rating": {rating}, "verified": {str(verified_purchase).lower()}}}', "1536"]
+                ])
+            
+            self.logger.debug(f"Storing event with data: {event_data}")
+            
+            # Store the event using the real backend
             episode_id = self.memory_store.store_event(
                 customer_id=customer_id,
                 event_data=event_data,
                 event_type=event_type,
                 timestamp=datetime.now()
             )
-            self.logger.debug(f"Event stored, episode_id={episode_id}")
-            extraction_results = [
-                ["customer", customer_id, f'{{"name": "{customer_name}", "identifier": "{customer_id}"}}', "1536"],
-                ["product", product_name, f'{{"name": "{product_name}", "category": "{category}", "price": {price}}}', "1536"],
-            ]
-            if event_type == "order_placed":
-                order_id = f"order_{customer_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                extraction_results.append([
-                    "order", 
-                    order_id, 
-                    f'{{"customer_id": "{customer_id}", "product_name": "{product_name}", "price": {price}}}',
-                    "1536"
-                ])
-            status = f"✅ Event stored successfully!\n📊 Episode ID: {episode_id}\n🔗 Entities extracted and embedded\n💾 Stored in PostgreSQL with vector embeddings"
-            self.logger.info(status)
+            
+            self.logger.debug(f"Event stored successfully, episode_id={episode_id}")
+            
+            status = f"""✅ {event_type.replace('_', ' ').title()} event stored successfully!
+📊 Episode ID: {episode_id}
+👤 Customer: {customer_name} ({customer_id})
+🔗 {len(extraction_results)} entities extracted and embedded
+💾 Stored in PostgreSQL with vector embeddings
+⏰ Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+            
+            self.logger.info(f"Successfully stored {event_type} event for customer {customer_id}")
             return extraction_results, status
+            
         except Exception as e:
-            self.logger.error(f"❌ Error storing event: {str(e)}", exc_info=True)
-            return [], f"❌ Error storing event: {str(e)}"
+            self.logger.error(f"❌ Error storing {event_type} event: {str(e)}", exc_info=True)
+            return [], f"❌ Error storing {event_type} event: {str(e)}"
     
     @log_ui_interaction
     def analyze_customer_journey(self, customer_id: str, days_back: int):

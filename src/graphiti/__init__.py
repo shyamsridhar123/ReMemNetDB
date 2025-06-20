@@ -8,7 +8,7 @@ __version__ = "0.1.0"
 __author__ = "shyamsridhar123"
 
 # Import main components
-from .ui.gradio_app import GraphitiUI
+from .ui.enhanced_gradio_app import EnhancedGraphitiUI as GraphitiUI
 
 __all__ = [
     "GraphitiUI",
