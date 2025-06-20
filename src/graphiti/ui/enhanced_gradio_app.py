@@ -193,35 +193,144 @@ class EnhancedGraphitiUI:
     def _setup_ui(self):
         self.logger.debug("Setting up Gradio UI components...")
         """Setup the enhanced Gradio interface"""
-        
-        # Enhanced CSS
+          # Enhanced CSS - Retro Theme
         css = """
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=VT323:wght@400&display=swap');
+        
         .gradio-container {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
             max-width: 1400px;
             margin: 0 auto;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: #00ff41;
         }
+        
+        .gr-textbox, .gr-dropdown, .gr-slider {
+            background-color: #0a0a0a !important;
+            border: 2px solid #00ff41 !important;
+            color: #00ff41 !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            border-radius: 0px !important;
+        }
+        
         .tab-nav {
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(90deg, #0f3460 0%, #533483 100%);
+            border-bottom: 3px solid #00ff41;
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+        }        .gr-button-primary {
+            background: linear-gradient(90deg, #00ff41 0%, #00cc33 100%);
+            border: 2px solid #00ff41;
+            border-radius: 0px;
+            color: #000000;
+            font-family: 'VT323', monospace;
+            font-size: 16px;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
         }
-        .gr-button-primary {
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            border-radius: 8px;
+        
+        .gr-button-primary:hover {
+            background: linear-gradient(90deg, #00cc33 0%, #009922 100%);
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.8);
+            transform: translateY(-2px);
         }
+        
+        .gr-button-secondary {
+            background: linear-gradient(90deg, #004400 0%, #006600 100%);
+            border: 2px solid #00ff41;
+            border-radius: 0px;
+            color: #00ff41;
+            font-family: 'VT323', monospace;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0 0 5px rgba(0, 255, 65, 0.3);
+        }
+        
+        .gr-button-secondary:hover {
+            background: linear-gradient(90deg, #006600 0%, #008800 100%);
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.6);
+            transform: translateY(-1px);
+        }
+        
+        /* Override any orange button styles */
+        .gr-button, button {
+            background: linear-gradient(90deg, #00ff41 0%, #00cc33 100%) !important;
+            border: 2px solid #00ff41 !important;
+            border-radius: 0px !important;
+            color: #000000 !important;
+            font-family: 'VT323', monospace !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+            text-transform: uppercase !important;
+            box-shadow: 0 0 8px rgba(0, 255, 65, 0.4) !important;
+        }
+        
+        .gr-button:hover, button:hover {
+            background: linear-gradient(90deg, #00cc33 0%, #009922 100%) !important;
+            box-shadow: 0 0 18px rgba(0, 255, 65, 0.7) !important;
+            transform: translateY(-2px) !important;
+        }
+        
         .status-success {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-            padding: 10px;
-            border-radius: 5px;
+            background-color: #001100;
+            border: 2px solid #00ff41;
+            color: #00ff41;
+            padding: 15px;
+            border-radius: 0px;
+            font-family: 'VT323', monospace;
+            font-size: 16px;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
         }
+        
         .status-error {
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-            padding: 10px;
-            border-radius: 5px;
+            background-color: #330000;
+            border: 2px solid #ff4444;
+            color: #ff4444;
+            padding: 15px;
+            border-radius: 0px;
+            font-family: 'VT323', monospace;
+            font-size: 16px;
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.3);
+        }
+        
+        h1, h2, h3 {
+            font-family: 'VT323', monospace !important;
+            color: #ff6b35 !important;
+            text-shadow: 0 0 10px rgba(255, 107, 53, 0.5);
+        }
+        
+        .gr-markdown {
+            color: #00ff41 !important;
+            font-family: 'JetBrains Mono', monospace !important;
+        }
+        
+        .gr-dataframe {
+            background-color: #0a0a0a !important;
+            border: 2px solid #00ff41 !important;
+            font-family: 'JetBrains Mono', monospace !important;
+        }
+        
+        /* Retro glow effect for interactive elements */
+        .gr-textbox:focus, .gr-dropdown:focus {
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.6) !important;
+            border-color: #00ffff !important;
+        }
+        
+        /* Terminal-style scrollbars */
+        ::-webkit-scrollbar {
+            width: 12px;
+            background-color: #0a0a0a;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background-color: #00ff41;
+            border-radius: 0px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background-color: #1a1a2e;
         }
         """
         
